@@ -3,7 +3,7 @@
 A robust, production‑ready tool for building **cartoon‑style squash‑and‑stretch curve deformers** in Autodesk Maya.  
 It creates a hierarchy of driver and bind joints driven by a primary curve, with an optional secondary curve sharing endpoints – perfect for facial rigging, limbs, and stylized animation.
 
-![UI Screenshot](https://imgur.com/ViYbMcu)
+![alt text](https://i.imgur.com/ViYbMcu.png)
 
 ---
 

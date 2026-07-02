@@ -1,5 +1,6 @@
 import maya.cmds as cmds
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  CONSTANTS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +89,27 @@ def _build_orient_network(poci, label):
     dcm = cmds.createNode("decomposeMatrix", name="decMtx_{}".format(label))
     cmds.connectAttr("{}.output".format(fbfm), "{}.inputMatrix".format(dcm))
     return fbfm, dcm
+
+
+def _build_mid_blend_network(off, jnt_a, jnt_b, weight, label):
+    """
+    Drive a mid-driver's offset group by blending between the worldMatrix of
+    the two neighboring lo joints (the 'corners' the mid param sits between),
+    instead of sampling the lo curve live via pointOnCurveInfo/fourByFourMatrix.
+
+    weight = 0.0 -> fully at jnt_a, weight = 1.0 -> fully at jnt_b.
+    """
+    bm = cmds.createNode("blendMatrix", name="blendMtx_{}".format(label))
+    cmds.connectAttr("{}.worldMatrix[0]".format(jnt_a), "{}.inputMatrix".format(bm))
+    cmds.connectAttr("{}.worldMatrix[0]".format(jnt_b), "{}.target[0].targetMatrix".format(bm))
+    cmds.setAttr("{}.target[0].weight".format(bm), weight)
+
+    dcm = cmds.createNode("decomposeMatrix", name="decMtx_{}".format(label))
+    cmds.connectAttr("{}.outputMatrix".format(bm),   "{}.inputMatrix".format(dcm))
+    cmds.connectAttr("{}.outputTranslate".format(dcm), "{}.translate".format(off))
+    cmds.connectAttr("{}.outputRotate".format(dcm),    "{}.rotate".format(off))
+
+    return bm, dcm
 
 
 def _build_driver_joint(curve_shape, param, label, parent_grp, color):
@@ -242,22 +264,26 @@ def build_curve_system(curve_transform, center_node, num_mid, num_bind,
         toSelectedBones=True, skinMethod=0, normalizeWeights=1,
     )
 
+    # ── mid drivers: blend between the two neighboring lo joints ────────────
+    # Every MID_PARAMS value falls inside exactly one of the two lo half-spans:
+    # [0, LO_SPANS/2] -> blend full_lo_joints[0] -> full_lo_joints[1]
+    # [LO_SPANS/2, LO_SPANS] -> blend full_lo_joints[1] -> full_lo_joints[2]
+    half = float(LO_SPANS) / 2.0
+
     mid_driver_joints = []
     for idx, param in enumerate(MID_PARAMS[num_mid]):
         label    = "{}_mid_{}".format(base, idx + 1)
         off, jnt = _build_driver_joint(lo_shape, param, label,
                                        drivers_grp, COLOR_ORANGE)
 
-        poci = cmds.createNode("pointOnCurveInfo", name="poci_{}".format(label))
-        cmds.setAttr("{}.turnOnPercentage".format(poci), False)
-        cmds.setAttr("{}.parameter".format(poci), param)
-        cmds.connectAttr("{}.worldSpace[0]".format(lo_shape),
-                         "{}.inputCurve".format(poci))
+        if param <= half:
+            jnt_a, jnt_b = full_lo_joints[0], full_lo_joints[1]
+            weight = param / half
+        else:
+            jnt_a, jnt_b = full_lo_joints[1], full_lo_joints[2]
+            weight = (param - half) / half
 
-        cmds.connectAttr("{}.position".format(poci), "{}.translate".format(off))
-
-        _, dcm = _build_orient_network(poci, label)
-        cmds.connectAttr("{}.outputRotate".format(dcm), "{}.rotate".format(off))
+        _build_mid_blend_network(off, jnt_a, jnt_b, weight, label)
 
         mid_driver_joints.append(jnt)
 
